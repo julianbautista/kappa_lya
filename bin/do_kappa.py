@@ -13,7 +13,7 @@ from scipy import random
 import copy
 
 from picca import constants
-from picca import cf
+#from picca import cf
 from picca.wedgize import wedge
 from picca.data import delta
 from picca.fitter.parameters import parameters
@@ -133,7 +133,7 @@ class kappa:
 
         fout = open('ximodel.txt', 'w')
         for i in range(len(data.RP)):
-            print>>fout, data.RP[i], data.RT[i], xid[i]
+            print(data.RP[i], data.RT[i], xid[i], file=fout)
         fout.close()
       
     @staticmethod
@@ -326,17 +326,17 @@ if __name__=='__main__':
     for p in kappa.data.keys():
         cpu_data[p] = [p]
 
-    print ' ', len(kappa.data.keys()), 'pixels with data'
+    print(' ', len(kappa.data.keys()), 'pixels with data')
     pool = Pool(processes=48)
     results = pool.map(compute_kappa, cpu_data.values())
     pool.close()
-    print ''
+    print('')
 
     #-- compiling results from pool
     kap = sp.zeros(12*kappa.nside**2)
     wkap = sp.zeros(12*kappa.nside**2)
     for i, r in enumerate(results):
-        print i, len(results)
+        print(i, len(results))
         index = r[1].keys()
         values = r[1].values()
         kap[index]  += values
