@@ -13,7 +13,6 @@ from scipy import random
 import copy
 
 from picca import constants
-#from picca import cf
 from picca.wedgize import wedge
 from picca.data import delta
 from picca.fitter.parameters import parameters
@@ -66,21 +65,24 @@ class kappa:
                    is_config_file=True, help='config file path')
 
         for i in param.dic_init_float:
-            parser.add('--'+i, type=types.FloatType, required=False, \
+            parser.add('--'+i, type=float, required=False, \
                        help=param.help[i], default=param.dic_init_float[i])
         for i in param.dic_init_int:
-            parser.add('--'+i, type=types.IntType,   required=False,  \
+            parser.add('--'+i, type=int,   required=False,  \
                        help=param.help[i], default=param.dic_init_int[i])
         for i in param.dic_init_bool:
             parser.add('--'+i, action='store_true',  required=False,  \
                        help=param.help[i], default=param.dic_init_bool[i])
         for i in param.dic_init_string:
-            parser.add('--'+i, type=types.StringType, required=False, \
+            parser.add('--'+i, type=str, required=False, \
                        help=param.help[i], default=param.dic_init_string[i])
         for i in param.dic_init_list_string:
-            parser.add('--'+i, type=types.StringType, required=False, \
+            parser.add('--'+i, type=str, required=False, \
                        help=param.help[i], \
                        default=param.dic_init_list_string[i],nargs="*")
+        
+        parser.add('--out', required=True, help='output text file with model')
+        parser.add('--plot', required=False, action='store_true', default=False)
 
         args, unknown = parser.parse_known_args()
         param.set_parameters_from_parser(args=args,unknown=unknown)
@@ -90,21 +92,27 @@ class kappa:
         m = model(dic_init)
         m.add_auto(dic_init)
         
-        met=metals.model(dic_init) 
-        met.templates = not dic_init['metal_dmat']
-        met.grid = not dic_init['metal_xdmat']
-        met.add_auto()
+        met = None
+        if dic_init['metals'] is not None:
+            met=metals.model(dic_init) 
+            met.templates = not dic_init['metal_dmat']
+            met.grid = not dic_init['metal_xdmat']
+            met.add_auto()
 
-        data = fits.open('cf_dla_forfit.fits.gz')[1].data 
+        data = fits.open(dic_init['data_auto'])[1].data 
 
         xi = m.valueAuto( data.RP, data.RT, data.Z, dic_init)
-        xi += met.valueAuto(dic_init)
+        if met: 
+            xi += met.valueAuto(dic_init)
 
         xid = data.DM.dot(xi)
 
+        fout = open(args.out, 'w')
+        for i in range(len(data.RP)):
+            print(data.RP[i], data.RT[i], xid[i], file=fout)
+        fout.close()
 
-        plotit=0
-        if plotit:
+        if args.plot:
             P.figure()
             P.pcolormesh( sp.reshape(data.RP, (50, 50)), \
                           sp.reshape(data.RT, (50, 50)), \
@@ -131,10 +139,6 @@ class kappa:
                 P.xlabel('r [Mpc/h]')
             P.show()
 
-        fout = open('ximodel.txt', 'w')
-        for i in range(len(data.RP)):
-            print(data.RP[i], data.RT[i], xid[i], file=fout)
-        fout.close()
       
     @staticmethod
     def load_model(modelfile, nbins=20) :
@@ -317,49 +321,50 @@ def compute_kappa(p):
 
 if __name__=='__main__':
 
-    kappa.load_model('ximodel.txt')
-    #kappa.read_deltas()
-    kappa.read_deltas()
-    kappa.fill_neighs()
+    if sys.argv[1] == '-c':
+        kappa.read_model_from_config()
+    else:
+        kappa.load_model('ximodel.txt')
+        kappa.read_deltas()
+        kappa.fill_neighs()
 
-    cpu_data = {}
-    for p in kappa.data.keys():
-        cpu_data[p] = [p]
+        cpu_data = {}
+        for p in kappa.data.keys():
+            cpu_data[p] = [p]
 
-    print(' ', len(kappa.data.keys()), 'pixels with data')
-    pool = Pool(processes=48)
-    results = pool.map(compute_kappa, cpu_data.values())
-    pool.close()
-    print('')
+        print(' ', len(kappa.data.keys()), 'pixels with data')
+        pool = Pool(processes=1)
+        results = pool.map(compute_kappa, cpu_data.values())
+        pool.close()
+        print('')
 
-    #-- compiling results from pool
-    kap = sp.zeros(12*kappa.nside**2)
-    wkap = sp.zeros(12*kappa.nside**2)
-    for i, r in enumerate(results):
-        print(i, len(results))
-        index = r[1].keys()
-        values = r[1].values()
-        kap[index]  += values
-        index = r[2].keys()
-        values = r[2].values()
-        wkap[index] += values
-    
-    w = wkap>0
-    kap[w]/= wkap[w]
-
-    
-    out = fitsio.FITS('kappa_nside%d_rpmax%.1f_rtmax%.1f.fits.gz'% \
-            (kappa.nside, kappa.rp_max, kappa.rt_max), \
-            'rw', clobber=True)
-    head = {}
-    head['RPMIN']=kappa.rp_min
-    head['RPMAX']=kappa.rp_max
-    head['RTMAX']=kappa.rt_max
-    head['NT']=kappa.nt
-    head['NP']=kappa.np
-    head['NSIDE']=kappa.nside
-    out.write([kap, wkap], names=['kappa', 'wkappa'], header=head)
-    out.close()
+        #-- compiling results from pool
+        kap = sp.zeros(12*kappa.nside**2)
+        wkap = sp.zeros(12*kappa.nside**2)
+        for i, r in enumerate(results):
+            print(i, len(results))
+            index = r[1].keys()
+            values = r[1].values()
+            kap[index]  += values
+            index = r[2].keys()
+            values = r[2].values()
+            wkap[index] += values
+        
+        w = wkap>0
+        kap[w]/= wkap[w]
+        
+        out = fitsio.FITS('kappa_nside%d_rpmax%.1f_rtmax%.1f.fits.gz'% \
+                (kappa.nside, kappa.rp_max, kappa.rt_max), \
+                'rw', clobber=True)
+        head = {}
+        head['RPMIN']=kappa.rp_min
+        head['RPMAX']=kappa.rp_max
+        head['RTMAX']=kappa.rt_max
+        head['NT']=kappa.nt
+        head['NP']=kappa.np
+        head['NSIDE']=kappa.nside
+        out.write([kap, wkap], names=['kappa', 'wkappa'], header=head)
+        out.close()
 
 
 
