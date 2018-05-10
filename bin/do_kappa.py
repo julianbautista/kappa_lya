@@ -13,15 +13,10 @@ from scipy import random
 import copy
 
 from picca import constants
-from picca.wedgize import wedge
 from picca.data import delta
-from picca.fitter.parameters import parameters
-from picca.fitter.cosmo import model
-from picca.fitter import metals
 
 from multiprocessing import Pool,Process,Lock,Manager,cpu_count,Value
 
-import types
 import configargparse
 
 
@@ -55,92 +50,6 @@ class kappa:
     ndata=0
 
     @staticmethod
-    def read_model_from_config():
-
-        ### Get the parser
-        param = parameters()
-        parser = configargparse.ArgParser()
-
-        parser.add('-c', '--config_file', required=False, \
-                   is_config_file=True, help='config file path')
-
-        for i in param.dic_init_float:
-            parser.add('--'+i, type=float, required=False, \
-                       help=param.help[i], default=param.dic_init_float[i])
-        for i in param.dic_init_int:
-            parser.add('--'+i, type=int,   required=False,  \
-                       help=param.help[i], default=param.dic_init_int[i])
-        for i in param.dic_init_bool:
-            parser.add('--'+i, action='store_true',  required=False,  \
-                       help=param.help[i], default=param.dic_init_bool[i])
-        for i in param.dic_init_string:
-            parser.add('--'+i, type=str, required=False, \
-                       help=param.help[i], default=param.dic_init_string[i])
-        for i in param.dic_init_list_string:
-            parser.add('--'+i, type=str, required=False, \
-                       help=param.help[i], \
-                       default=param.dic_init_list_string[i],nargs="*")
-        
-        parser.add('--out', required=True, help='output text file with model')
-        parser.add('--plot', required=False, action='store_true', default=False)
-
-        args, unknown = parser.parse_known_args()
-        param.set_parameters_from_parser(args=args,unknown=unknown)
-        param.test_init_is_valid()
-        dic_init = param.dic_init
-
-        m = model(dic_init)
-        m.add_auto(dic_init)
-        
-        met = None
-        if dic_init['metals'] is not None:
-            met=metals.model(dic_init) 
-            met.templates = not dic_init['metal_dmat']
-            met.grid = not dic_init['metal_xdmat']
-            met.add_auto()
-
-        data = fits.open(dic_init['data_auto'])[1].data 
-
-        xi = m.valueAuto( data.RP, data.RT, data.Z, dic_init)
-        if met: 
-            xi += met.valueAuto(dic_init)
-
-        xid = data.DM.dot(xi)
-
-        fout = open(args.out, 'w')
-        for i in range(len(data.RP)):
-            print(data.RP[i], data.RT[i], xid[i], file=fout)
-        fout.close()
-
-        if args.plot:
-            P.figure()
-            P.pcolormesh( sp.reshape(data.RP, (50, 50)), \
-                          sp.reshape(data.RT, (50, 50)), \
-                          sp.reshape(xid*(data.RP**2+data.RT**2), (50, 50)), \
-                          vmin=-1, vmax=1. )
-            P.colorbar()
-
-            for mus in [[0., 0.5], [0.5, 0.8], [0.8, 0.95], [0.95, 1.]]:
-                w = wedge(rpmin=0.0, rpmax=200.0, nrp=50, \
-                        rtmin=0.0, rtmax=200.0, nrt=50, \
-                        rmin=0.0, rmax=200.0, nr=50, \
-                        mumin=mus[0], mumax=mus[1], ss=10)
-                r, wedm, wedcov = w.wedge(xid, data.CO)
-                r, wed, wedcov = w.wedge(data.DA, data.CO)
-            
-                dwed = N.sqrt(N.diag(wedcov))
-
-                P.figure()
-                #-- we multiply the wedges by r**2 so we can see the BAO peak
-                P.errorbar(r, wed*r**2, dwed*r**2, fmt='o')
-                P.plot(r, wedm*r**2)
-                P.ylim(-1.2, 0.5)
-                P.title(r'$%.1f < \mu < %.1f$'%(mus[0], mus[1]))
-                P.xlabel('r [Mpc/h]')
-            P.show()
-
-      
-    @staticmethod
     def load_model(modelfile, nbins=20) :
 
         data_rp, data_rt, xi_dist = N.loadtxt(modelfile, unpack=1)
@@ -159,8 +68,7 @@ class kappa:
         return xi2d
 
     @staticmethod
-    def read_deltas(nspec=None):
-        in_dir='deltas_dla'
+    def read_deltas(in_dir, nspec=None):
         data = {}
         ndata = 0
         dels = []
@@ -290,21 +198,9 @@ class kappa:
         wd12 = wd12[w]
         w12 = w12[w]
 
-        #bp = sp.floor( (rp-self.rp_min)/\
-        #        (self.rp_max-self.rp_min)*self.np ).astype(int)
-        #bt = (rt/self.rt_max*self.nt).astype(int)
-        #bins = bt + self.nt*bp
-
-        #if same_half_plate:
-        #    w = abs(rp)<(self.rp_max-self.rp_min)/self.np
-        #    wd12[w] = 0
-        #    w12[w]=0
-
         #-- getting model and first derivative
         xi_model = kappa.xi2d(rt, rp, grid=False)
         xip_model = kappa.xi2d(rt, rp, dx=1, grid=False)*rt
-        #xi_model = sp.zeros(rp.size)
-        #xip_model = sp.ones(rp.size)
        
         ska = sp.sum( (wd12 - xi_model)*xip_model*w12 )
         wka = sp.sum( w12*xip_model**2 ) 
@@ -321,50 +217,60 @@ def compute_kappa(p):
 
 if __name__=='__main__':
 
-    if sys.argv[1] == '-c':
-        kappa.read_model_from_config()
-    else:
-        kappa.load_model('ximodel.txt')
-        kappa.read_deltas()
-        kappa.fill_neighs()
+    parser = configargparse.ArgParser()
 
-        cpu_data = {}
-        for p in kappa.data.keys():
-            cpu_data[p] = [p]
+    parser.add('--deltas', required=True, type=str, \
+               help='folder containing deltas in pix format')
+    parser.add('--model', required=True, \
+               help='text file containing model')
+    parser.add('--out', required=True, \
+               help='output fits file with kappa map')
+    parser.add('--nproc', required=False, type=int, default=1, \
+               help='number of procs used in calculation')
+    args, unknown = parser.parse_known_args()
 
-        print(' ', len(kappa.data.keys()), 'pixels with data')
-        pool = Pool(processes=1)
-        results = pool.map(compute_kappa, cpu_data.values())
-        pool.close()
-        print('')
 
-        #-- compiling results from pool
-        kap = sp.zeros(12*kappa.nside**2)
-        wkap = sp.zeros(12*kappa.nside**2)
-        for i, r in enumerate(results):
-            print(i, len(results))
-            index = r[1].keys()
-            values = r[1].values()
-            kap[index]  += values
-            index = r[2].keys()
-            values = r[2].values()
-            wkap[index] += values
-        
-        w = wkap>0
-        kap[w]/= wkap[w]
-        
-        out = fitsio.FITS('kappa_nside%d_rpmax%.1f_rtmax%.1f.fits.gz'% \
-                (kappa.nside, kappa.rp_max, kappa.rt_max), \
-                'rw', clobber=True)
-        head = {}
-        head['RPMIN']=kappa.rp_min
-        head['RPMAX']=kappa.rp_max
-        head['RTMAX']=kappa.rt_max
-        head['NT']=kappa.nt
-        head['NP']=kappa.np
-        head['NSIDE']=kappa.nside
-        out.write([kap, wkap], names=['kappa', 'wkappa'], header=head)
-        out.close()
+    kappa.load_model(args.model)
+    kappa.read_deltas(args.deltas)
+    kappa.fill_neighs()
+
+    cpu_data = {}
+    for p in kappa.data.keys():
+        cpu_data[p] = [p]
+
+    print(' ', len(kappa.data.keys()), 'pixels with data')
+    pool = Pool(processes=args.nproc)
+    results = pool.map(compute_kappa, cpu_data.values())
+    pool.close()
+    print('')
+
+    #-- compiling results from pool
+    kap = sp.zeros(12*kappa.nside**2)
+    wkap = sp.zeros(12*kappa.nside**2)
+    for i, r in enumerate(results):
+        print(i, len(results))
+        index = r[1].keys()
+        values = r[1].values()
+        kap[index]  += values
+        index = r[2].keys()
+        values = r[2].values()
+        wkap[index] += values
+    
+    w = wkap>0
+    kap[w]/= wkap[w]
+    
+    out = fitsio.FITS(args.out% \
+            (kappa.nside, kappa.rp_max, kappa.rt_max), \
+            'rw', clobber=True)
+    head = {}
+    head['RPMIN']=kappa.rp_min
+    head['RPMAX']=kappa.rp_max
+    head['RTMAX']=kappa.rt_max
+    head['NT']=kappa.nt
+    head['NP']=kappa.np
+    head['NSIDE']=kappa.nside
+    out.write([kap, wkap], names=['kappa', 'wkappa'], header=head)
+    out.close()
 
 
 
