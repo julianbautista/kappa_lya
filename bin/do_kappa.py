@@ -249,19 +249,15 @@ if __name__=='__main__':
     wkap = sp.zeros(12*kappa.nside**2)
     for i, r in enumerate(results):
         print(i, len(results))
-        index = r[1].keys()
-        values = r[1].values()
-        kap[index]  += values
-        index = r[2].keys()
-        values = r[2].values()
-        wkap[index] += values
+        index = N.array(r[0])
+        for j in index:
+            kap[j]  += r[1][j]
+            wkap[j] += r[2][j]
     
     w = wkap>0
     kap[w]/= wkap[w]
     
-    out = fitsio.FITS(args.out% \
-            (kappa.nside, kappa.rp_max, kappa.rt_max), \
-            'rw', clobber=True)
+    out = fitsio.FITS(args.out, 'rw', clobber=True)
     head = {}
     head['RPMIN']=kappa.rp_min
     head['RPMAX']=kappa.rp_max
