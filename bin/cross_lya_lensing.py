@@ -66,10 +66,11 @@ def plot_cl(infile):
     P.tight_layout()
         
 
-plot_cl('kappa-mock-unlensed.fits.gz')
-plot_cl('kappa-mock-lensed.fits.gz')
-P.legend(['Unlensed', 'Lensed'])
-P.savefig('plots/cl-kappa-mock.pdf', bbox_inches='tight')
+plot_cl(sys.argv[1])
+P.show()
+#plot_cl('kappa-mock-lensed.fits.gz')
+#P.legend(['Unlensed', 'Lensed'])
+#P.savefig('plots/cl-kappa-mock.pdf', bbox_inches='tight')
 
 
 
