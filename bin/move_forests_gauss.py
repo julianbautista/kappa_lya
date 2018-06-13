@@ -1,9 +1,20 @@
-import camb 
+# Author: Sam Youles
+# Modified by Julian Bautista
+
+from astropy.io import fits
+import numpy as N
+import healpy as hp
+import sys
+import glob
+import os
+import fitsio
+from SphericalDiff import *
+
+import camb
 import camb.model
 import pylab as plt
 import numpy as np
 import sys
-
 
 def create_cl_kappa(zstar=2.1):
 
@@ -31,7 +42,7 @@ def create_cl_kappa(zstar=2.1):
     #-- Get the matter power spectrum interpolation object 
     #-- (based on RectBivariateSpline). 
     #-- Here for lensing we want the power spectrum of the Weyl potential.
-    PK = camb.get_matter_power_interpolator(pars, nonlinear=True, 
+    PK = camb.get_matter_power_interpolator(pars, nonlinear=True,
         hubble_units=False, k_hunit=False, kmax=kmax, zmax=zs[-1])
         #var1=camb.model.Transfer_Weyl, 
         #var2=camb.model.Transfer_Weyl)
@@ -42,7 +53,7 @@ def create_cl_kappa(zstar=2.1):
     ls = np.arange(2,10000, dtype=np.float64)
     cl_kappa=np.zeros(ls.shape)
     #this is just used to set to zero k values out of range of interpolation
-    w = np.ones(chis.shape) 
+    w = np.ones(chis.shape)
     for i, l in enumerate(ls):
         #k=(l+0.5)/chis
         k=(l)/chis
@@ -63,11 +74,61 @@ def create_cl_kappa(zstar=2.1):
 
     return ell, cl
 
-def plot_cl(ell, cl, label=None):
-    plt.loglog(ell,cl, label=label)
-    plt.xlim([1,2000])
-    plt.ylabel('$[L(L+1)]^2C_L^{\phi}/2\pi$')
-    plt.xlabel('$L$')
-    plt.show()
 
+
+# input directory name containing delta files
+indir = sys.argv[1]
+outdir = sys.argv[2]
+
+
+nside=1024
+npix=nside**2*12
+
+
+ell, cl = create_cl_kappa()
+#-- factor to make sensible displacements
+factor = ell*(ell+1)/(2*np.pi)
+
+obsk = hp.sphtfunc.synfast(cl*factor, nside=nside, lmax=2*nside-1,\
+                 pol=False)
+kappa = SphericalMap(obsk) 
+kappa.compute_deriv()
+
+# Amend DEC and RA in each of the delta files by the bend angle from alpha map
+alldeltas = glob.glob(indir+'/*.fits.gz')
+ndel = len(alldeltas)
+i=0
+for filename in alldeltas:
+    #hdus = fits.open(filename)
+    hdus = fitsio.FITS(filename)
+    print(i, ndel)
+    i+=1
+
+    out = fitsio.FITS(outdir+"/"+os.path.basename(filename),'rw',clobber=True)
+
+    for hdu in hdus[1:]:
+        header = hdu.read_header()
+        ra = header['RA']
+        dec = header['DEC']
+
+        # Add bend angles to ra and dec
+        theta_lens, phi_lens = kappa.DisplaceObjects(N.pi/2-dec, ra) 
+        
+        # Rewrite new delta file with new values
+        header['RA'] = phi_lens
+        header['DEC'] = N.pi/2-theta_lens
+        header['RA0'] = ra
+        header['DEC0'] = dec
+      
+        #-- Re-create columns (maybe there's a better way to do this?) 
+        ll = hdu['LOGLAM'][:]
+        de = hdu['DELTA'][:]
+        we = hdu['WEIGHT'][:]
+        co = hdu['CONT'][:] 
+        cols=[ll, de, we, co]
+        names=['LOGLAM','DELTA','WEIGHT','CONT']
+        out.write(cols, names=names, header=header, \
+                  extname=str(header['THING_ID']))
+
+    out.close()
 
