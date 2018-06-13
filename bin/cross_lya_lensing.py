@@ -58,15 +58,16 @@ def plot_cl(infile):
     new_cl = scl/well
 
     #P.plot(ell, lya_cmb_cl)
-    P.plot(new_ell, new_cl)
+    P.plot(new_ell, new_cl, label=os.path.basename(infile)[:-8])
     #P.ylim(-0.001, 0.001)
     P.xscale('log')
     P.ylabel(r'$\langle \kappa_{\rm Lya} \kappa_{\rm Lya} \rangle$', fontsize=20)
     P.xlabel(r'$\ell$', fontsize=20)
+    P.legend(loc=0)
     P.tight_layout()
         
-
-plot_cl(sys.argv[1])
+for fi in sys.argv[1:]:
+    plot_cl(fi)
 P.show()
 #plot_cl('kappa-mock-lensed.fits.gz')
 #P.legend(['Unlensed', 'Lensed'])
