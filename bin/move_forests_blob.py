@@ -2,14 +2,13 @@
 # Modified by Julian Bautista
 
 from astropy.io import fits
-import numpy as N
+import numpy as np
 import healpy as hp
 import sys
 import glob
 import os
 import fitsio
-from SphericalDiff import *
-
+import kappa_lya
 
 # input directory name containing delta files
 indir = sys.argv[1]
@@ -19,20 +18,14 @@ outdir = sys.argv[2]
 nside=512
 npix=nside**2*12
 
-kappa = N.zeros(npix)
-theta, phi = hp.pix2ang(nside, N.arange(npix))
-kappa = SphericalMap(N.exp(-((phi-N.pi)**2+(theta-(1.1))**2)/(2*0.1**2)))
-kappa.compute_deriv()
+kappa = kappa_lya.create_blob_kappa(nside=nside, phi0=np.pi, theta0=1.1)
 
 # Amend DEC and RA in each of the delta files by the bend angle from alpha map
 alldeltas = glob.glob(indir+'/*.fits.gz')
 ndel = len(alldeltas)
-i=0
-for filename in alldeltas:
-    #hdus = fits.open(filename)
+for i, filename in enumerate(alldeltas):
     hdus = fitsio.FITS(filename)
     print(i, ndel)
-    i+=1
 
     out = fitsio.FITS(outdir+"/"+os.path.basename(filename),'rw',clobber=True)
 
@@ -42,11 +35,13 @@ for filename in alldeltas:
         dec = header['DEC']
 
         # Add bend angles to ra and dec
-        theta_lens, phi_lens = kappa.DisplaceObjects(N.pi/2-dec, ra) 
+        theta_lens, phi_lens = kappa.displace_objects(np.pi/2-dec, ra) 
         
         # Rewrite new delta file with new values
-        header['RA_LENS'] = phi_lens
-        header['DEC_LENS'] = N.pi/2-theta_lens
+        header['RA'] = phi_lens
+        header['DEC'] = np.pi/2-theta_lens
+        header['RA0'] = ra
+        header['DEC0'] = dec
       
         #-- Re-create columns (maybe there's a better way to do this?) 
         ll = hdu['LOGLAM'][:]

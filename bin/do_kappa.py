@@ -145,14 +145,9 @@ class kappa:
                 for d2 in d1.neighs:
                     #--  compute the cartesian mid points and convert back 
                     #--  to ra, dec
-                    if kappa.true_corr or kappa.use_lensed_angles:
-                        mid_xcart = 0.5*(d1.xcart_lens+d2.xcart_lens)
-                        mid_ycart = 0.5*(d1.ycart_lens+d2.ycart_lens)
-                        mid_zcart = 0.5*(d1.zcart_lens+d2.zcart_lens)
-                    else:
-                        mid_xcart = 0.5*(d1.xcart+d2.xcart)
-                        mid_ycart = 0.5*(d1.ycart+d2.ycart)
-                        mid_zcart = 0.5*(d1.zcart+d2.zcart)
+                    mid_xcart = 0.5*(d1.xcart+d2.xcart)
+                    mid_ycart = 0.5*(d1.ycart+d2.ycart)
+                    mid_zcart = 0.5*(d1.zcart+d2.zcart)
                     mid_ra, mid_dec = get_radec(\
                         N.array([mid_xcart, mid_ycart, mid_zcart]))
 
@@ -167,12 +162,9 @@ class kappa:
                             (d1.fid>500 and d2.fid>500) )
 
                     #-- angle between skewers
-                    if kappa.use_lensed_angles:
-                        ang = d1.lensed_angle(d2)
-                    else:
-                        ang = d1^d2
-                        if kappa.true_corr:
-                            ang_lens = d1.lensed_angle(d2)
+                    ang = d1^d2
+                    if kappa.true_corr:
+                        ang_delensed = d1.delensed_angle(d2)
 
                     #-- getting pixel in between 
                     mid_pix = healpy.ang2pix(kappa.nside, \
@@ -182,7 +174,7 @@ class kappa:
                         sk, wk = kappa.fast_kappa_true(\
                                 d1.z, d1.r_comov, \
                                 d2.z, d2.r_comov, \
-                                ang, ang_lens) 
+                                ang_delensed, ang)
                     else:
                         sk, wk = kappa.fast_kappa(\
                                 d1.z, d1.r_comov, d1.we, d1.de, \
@@ -203,22 +195,16 @@ class kappa:
 
     @staticmethod
     def fast_kappa(z1,r1,w1,d1,z2,r2,w2,d2,ang,same_half_plate):
-        #wd1 = d1*w1
-        #wd2 = d2*w2
         rp = abs(r1-r2[:,None])*sp.cos(ang/2)
         rt = (r1+r2[:,None])*sp.sin(ang/2)
         d12 = d1*d2[:, None]
-        #wd12 = wd1*wd2[:,None]
         w12 = w1*w2[:,None]
-        #z = (z1+z2[:,None])/2
 
         w = (rp>=kappa.rp_min) & (rp<=kappa.rp_max) & \
             (rt<=kappa.rt_max) & (rt>=kappa.rp_min)
 
         rp = rp[w]
         rt = rt[w]
-        #z  = z[w]
-        #wd12 = wd12[w]
         w12 = w12[w]
         d12 = d12[w]
 
@@ -290,6 +276,8 @@ if __name__=='__main__':
                help='output fits file with kappa map')
     parser.add('--nproc', required=False, type=int, default=1, \
                help='number of procs used in calculation')
+    parser.add('--nspec', required=False, type=int, default=None, \
+               help='number of spectra to process')
     parser.add('--rt_min', required=False, type=float, default=3., \
                help='minimum transverse separation')
     parser.add('--rp_min', required=False, type=float, default=3., \
@@ -300,18 +288,15 @@ if __name__=='__main__':
                help='maximum radial separation')
     parser.add('--true_corr', required=False, default=False,\
                action='store_true', help='use actual lensed correlation')
-    parser.add('--use_lensed_angles', required=False, default=False, \
-               action='store_true', help='use RA_LENS and DEC_LENS')
     args, unknown = parser.parse_known_args()
 
-    kappa.use_lensed_angles = args.use_lensed_angles
     kappa.true_corr = args.true_corr
     kappa.rt_min = args.rt_min
     kappa.rp_min = args.rp_min
     kappa.rt_max = args.rt_max
     kappa.rp_max = args.rp_max
     kappa.load_model(args.model)
-    kappa.read_deltas(args.deltas)
+    kappa.read_deltas(args.deltas, nspec=args.nspec)
     kappa.fill_neighs()
 
     cpu_data = {}
