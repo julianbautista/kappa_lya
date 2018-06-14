@@ -23,7 +23,7 @@ nside=1024
 npix=nside**2*12
 seed=1
 np.random.seed(seed)
-kappa = create_gaussian(ell, cell, nside=nside, seed=seed)
+kappa = create_gaussian_kappa(ell, cell, nside=nside, seed=seed)
 
 # Amend DEC and RA in each of the delta files by the bend angle from alpha map
 alldeltas = glob.glob(indir+'/*.fits.gz')
