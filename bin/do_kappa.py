@@ -154,7 +154,7 @@ class kappa:
                     #-- apply rotation into Galactic coordinates
                     #th, phi = kappa.rot(sp.pi/2-mid_dec, mid_ra)
                     #-- keeping without rotation and adding pi to RA for visual
-                    th, phi = sp.pi/2-mid_dec, mid_ra+sp.pi
+                    th, phi = sp.pi/2-mid_dec, mid_ra
 
                     #-- check if pair of skewers belong to same spectro
                     same_half_plate = (d1.plate == d2.plate) and\
