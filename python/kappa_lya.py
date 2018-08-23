@@ -195,19 +195,25 @@ def test_disp( disp_x, disp_y,
     ipix = hp.ang2pix(nside, theta, phi)
     dphi = disp_x[ipix]
     dtheta = disp_y[ipix]
-        
+   
+    ra = phi
+    dec = np.pi/2-theta
+
     dd=np.sqrt(dphi**2+dtheta**2)
-    alpha=np.arctan2(dphi,dtheta)
+    alpha=np.arctan2(dphi, dtheta)
     ## Equation A15 from 0502469
     thetap=np.arccos(np.cos(dd)*np.cos(theta)-
                      np.sin(dd)*np.sin(theta)*np.cos(alpha))
     phip=phi+np.arcsin(np.sin(alpha)*np.sin(dd)/np.sin(thetap))
 
+    rap = phip
+    decp = np.pi/2-thetap 
+
     plt.figure()
-    for t,p,t2,p2 in zip(theta, phi, thetap, phip):
+    for t,p,t2,p2 in zip(dec, ra, decp, rap):
         plt.arrow(p, t, (p2-p)*factor, (t2-t)*factor, color='k', width=0.0003)
-    plt.xlim(rangex)
-    plt.ylim(rangey)
+    plt.xlim(rangex[1], rangex[0])
+    plt.ylim(np.pi/2-rangey[1], np.pi/2-rangey[0])
 
 def read_kappa(fin, rebin=1, ellmin=None, ellmax=None, nell=100, 
                     smooth=15., cut_outliers=0):
