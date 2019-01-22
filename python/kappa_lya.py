@@ -45,10 +45,10 @@ class Theory:
         #win = ((chistar-chis)/(chis**2*chistar))**2
         win = ((chistar-chis)/(chistar/(1+zs)))**2
         #Do integral over chi
-        ls = np.arange(2, lmax, dtype=np.float64)
+        ls = np.arange(2, lmax, dtype=float)
         cl_kappa=np.zeros(ls.shape)
         #this is just used to set to zero k values out of range of interpolation
-        w = np.ones(chis.shape)
+        w = np.ones(chis.size)
         for i, l in enumerate(ls):
             #k=(l+0.5)/chis
             k=(l)/chis
@@ -90,7 +90,6 @@ class SphericalMap:
             self.ell = np.outer(np.arange(lmax),np.ones(lmax))
             self.em = self.ell.T
             self.theta_pix, self.phi_pix = hp.pix2ang(self.nside, np.arange(self.npix))
-            ell, emm = [], []
             cc=0
             for m in range(lmax):
                 for l in range(m, lmax):
@@ -145,8 +144,8 @@ class SphericalMap:
         almp[0,:]=0.0
         m2=self._CloneAlm(almp)
         m1=self._CloneAlm(self.Alm*(self.ell+1))
-        theta, phi = self.theta_pix, self.phi_pix 
-        mtot=-m1.A*np.cos(theta)/np.sin(theta)+m2.A*1/np.sin(theta)
+        theta = self.theta_pix
+        mtot=-1*m1.A*np.cos(theta)/np.sin(theta)+m2.A*1/np.sin(theta)
         return SphericalMap(mtot)
 
     def displace_objects(self, theta, phi):
