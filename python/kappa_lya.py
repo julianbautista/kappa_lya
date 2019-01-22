@@ -29,7 +29,9 @@ class Theory:
         chistar = results.comoving_radial_distance(z)
         chis = np.linspace(0, chistar, nz)
         zs = results.redshift_at_comoving_radial_distance(chis)
-        #Calculate array of delta_chi, and drop first and last points where things go singular
+
+        #-- Calculate array of delta_chi, and drop first and last points 
+        #-- where things go singular
         dchis = (chis[2:]-chis[:-2])/2
         chis = chis[1:-1]
         zs = zs[1:-1]
@@ -161,6 +163,31 @@ class SphericalMap:
         phip = phi+np.arcsin(np.sin(alpha)*np.sin(dd)/np.sin(thetap))
         return thetap, phip
 
+class Kappa:
+
+    def __init__(self, fin):
+        a = fits.open(fin)[1].data
+        self.kappa = a.kappa
+        self.we = a.wkappa
+        try:
+            self.gamma1 = a.gamma1
+            self.gamma2 = a.gamma2
+            self.npairs = a.npairs
+            has_gamma=True
+        except:
+            has_gamma=False
+            pass
+        self.nside = hp.npix2nside(a.kappa.size)
+        w = (self.we == 0)
+        
+        self.kappa[w] = hp.UNSEEN
+        if has_gamma:
+            self.gamma1[w] = hp.UNSEEN
+            self.gamma2[w] = hp.UNSEEN
+        self.mask = ~w 
+        self.has_gamma = has_gamma 
+
+
 def create_blob_kappa(nside=512, phi0=np.pi/2, theta0=1.1):
     ''' Generatte kappa map with a blob in the center '''
     npix = nside**2*12
@@ -180,6 +207,8 @@ def create_gaussian_kappa(ell, cell, nside=1024, seed=1):
     kappa = SphericalMap(obsk)
     kappa.compute_deriv()
     return kappa
+
+
 
 def test_disp( disp_x, disp_y,
                rangex=[np.pi/2-1., np.pi/2+1.],
@@ -215,8 +244,8 @@ def test_disp( disp_x, disp_y,
     plt.xlim(rangex[1], rangex[0])
     plt.ylim(np.pi/2-rangey[1], np.pi/2-rangey[0])
 
-def read_kappa(fin, rebin=1, ellmin=None, ellmax=None, nell=100, 
-                    smooth=15., cut_outliers=0):
+def read_kappa(fin, rebin=0, ellmin=None, ellmax=None, nell=0, 
+                    smooth=0, cut_outliers=0):
     ''' Read kappa.fits.gz and compute power spectrum
         Input
         -----
@@ -224,49 +253,73 @@ def read_kappa(fin, rebin=1, ellmin=None, ellmax=None, nell=100,
         rebin: bool - if True rebins power spectrum with l*(l+1) weights
         smooth: smooth map if != 0 by smooth value in arcmin
         cut_outliers: if True will set 1% extreme pixels to UNSEEN value
+        
+        Returns
+        -----
+        ell: array with re-binned ell values
+        cls: list of arrays of power spectra for kappa, gamma1, gamma2
+        f_sky: float containing the fraction of sky covered and not masked
     '''
 
     a = fits.open(fin)[1].data
-    lya_kappa = a.kappa
+    kappa = a.kappa
+    try: 
+        gamma1 = a.gamma1
+        gamma2 = a.gamma2
+        has_gamma = True
+    except:
+        has_gamma = False
+        pass
 
     #-- masking values where there's no forests
     w0 = a.wkappa != 0.
-    
-    lya_kappa[~w0] = hp.UNSEEN
-    if cut_outliers:
-        w = (lya_kappa > np.percentile(lya_kappa[w0], 0.5)) & \
-            (lya_kappa < np.percentile(lya_kappa[w0], 99.5))
-        lya_kappa[~w] = hp.UNSEEN
+    f_sky = sum(w0)/a.size
 
-    #-- smoothing in angular direction
-    if smooth:
-        lya_kappa = hp.smoothing(lya_kappa, fwhm=smooth/60*np.pi/180)
+    cls = []
+    if has_gamma:
+        maps = [kappa, gamma1, gamma2]
+    else:
+        maps = [kappa]
 
-    #-- getting alm and auto power-spectrum 
-    lya_alm = hp.map2alm(lya_kappa)
-    lya_cl = hp.alm2cl(lya_alm)
+    for m in maps: 
+        m[~w0] = hp.UNSEEN
+        if cut_outliers:
+            w = (m > np.percentile(m[w0], 0.5)) & \
+                (m < np.percentile(m[w0], 99.5))
+            m[~w] = hp.UNSEEN
 
+        #-- smoothing in angular direction
+        if smooth:
+            m = hp.smoothing(m, fwhm=smooth/60*np.pi/180)
 
-    ell = np.arange(lya_cl.size)
+        #-- getting alm and auto power-spectrum 
+        #alm = hp.map2alm(m)
+        cl = hp.anafast(m)
+        ell = np.arange(cl.size)
 
-    if rebin: 
-        weights = 2.*ell+1.
-        if not ellmin:
-            ellmin = min(ell)
-        if not ellmax:
-            ellmax = max(ell)
-        if nell==0:
-            nell = ellmax-ellmin
+        if rebin and nell>0: 
+            ell, cl = rebin_cell(ell, cl, nell=nell, ellmin=ellmin, ellmax=ellmax) 
 
-        w = (ell>=ellmin)&(ell<=ellmax)
-        index = np.floor( (ell[w]-ellmin)*1./(ellmax-ellmin)*nell ).astype(int)
-        well = np.bincount( index, weights=weights[w])
-        sell = np.bincount( index, weights=weights[w]*ell[w])
-        scl  = np.bincount( index, weights=weights[w]*lya_cl[w])
-        ell = sell/well
-        lya_cl = scl/well
-        
-    return ell, lya_cl 
+        cls.append(cl)
 
 
+    return ell, np.array(cls), f_sky
+
+def rebin_cell(ell, cl, nell=100, ellmin=None, ellmax=None):
+
+    weights = 2.*ell+1
+    if not ellmin:
+        ellmin = min(ell)
+    if not ellmax:
+        ellmax = max(ell) 
+
+    w = (ell>=ellmin)&(ell<=ellmax)
+    index = np.floor( (ell[w]-ellmin)*1./(ellmax-ellmin)*nell ).astype(int)
+    well = np.bincount( index, weights=weights[w])
+    sell = np.bincount( index, weights=weights[w]*ell[w])
+    scl  = np.bincount( index, weights=weights[w]*cl[w])
+    ell = sell/well
+    cl = scl/well
+
+    return ell, cl
 
