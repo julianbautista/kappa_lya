@@ -48,7 +48,7 @@ class Theory:
         ls = np.arange(2, lmax, dtype=float)
         cl_kappa=np.zeros(ls.shape)
         #this is just used to set to zero k values out of range of interpolation
-        w = np.ones(chis.size)
+        w = np.ones(len(chis))
         for i, l in enumerate(ls):
             #k=(l+0.5)/chis
             k=(l)/chis
@@ -225,7 +225,7 @@ def read_kappa(fin, rebin=1, ellmin=None, ellmax=None, nell=100,
         cut_outliers: if True will set 1% extreme pixels to UNSEEN value
     '''
 
-    a = fits.open(fin)[1].data
+    a = fits.getdata(fin)[1]
     lya_kappa = a.kappa
 
     #-- masking values where there's no forests
