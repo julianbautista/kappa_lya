@@ -17,7 +17,6 @@ from picca.mydata import delta
 
 from multiprocessing import Pool,Process,Lock,Manager,cpu_count,Value
 
-import configargparse
 
 class kappa:
 
@@ -270,29 +269,29 @@ def compute_kappa(p):
 
 if __name__=='__main__':
 
-    parser = configargparse.ArgParser()
+    parser = argparse.ArgumentParser()
 
-    parser.add('--deltas', required=True, type=str, \
+    parser.add_argument('--deltas', required=True, type=str, \
                help='folder containing deltas in pix format')
-    parser.add('--model', required=True, \
+    parser.add_argument('--model', required=True, \
                help='text file containing model') 
-    parser.add('--out', required=True, \
+    parser.add_argument('--out', required=True, \
                help='output fits file with kappa values')
-    parser.add('--nproc', required=False, type=int, default=1, \
+    parser.add_argument('--nproc', required=False, type=int, default=1, \
                help='number of procs used in calculation')
-    parser.add('--nspec', required=False, type=int, default=None, \
+    parser.add_argument('--nspec', required=False, type=int, default=None, \
                help='number of spectra to process')
-    parser.add('--rt_min', required=False, type=float, default=3., \
+    parser.add_argument('--rt_min', required=False, type=float, default=3., \
                help='minimum transverse separation')
-    parser.add('--rp_min', required=False, type=float, default=3., \
+    parser.add_argument('--rp_min', required=False, type=float, default=3., \
                help='minimum radial separation')
-    parser.add('--rt_max', required=False, type=float, default=40., \
+    parser.add_argument('--rt_max', required=False, type=float, default=40., \
                help='maximum transverse separation')
-    parser.add('--rp_max', required=False, type=float, default=10., \
+    parser.add_argument('--rp_max', required=False, type=float, default=10., \
                help='maximum radial separation')
-    parser.add('--true_corr', required=False, default=False,\
+    parser.add_argument('--true_corr', required=False, default=False,\
                action='store_true', help='use actual lensed correlation')
-    args, unknown = parser.parse_known_args()
+    args = parser.parse_args()
 
     kappa.true_corr = args.true_corr
     kappa.rt_min = args.rt_min

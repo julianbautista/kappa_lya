@@ -7,22 +7,23 @@ import sys
 import glob
 import os
 import fitsio
-from kappa_lya import *
+from kappa_lya import create_gaussian_kappa
 
 # input directory name containing delta files
 indir = sys.argv[1]
-outdir = sys.argv[2]
+cl_file = sys.argv[2]
+outdir = sys.argv[3]
+seed = int(sys.argv[4])
 
 
 
-#-- Create angular power spectrum of kappa
-theory = Theory()
-ell, cell = theory.get_cl_kappa(2.1, kmax=100., nz=100, lmax=10000)
+#-- Create angular power spectrum of kappa able to produce maps up to nside=4098
+#theory = Theory()
+#ell, cell = theory.get_cl_kappa(2.1, kmax=100., nz=100, lmax=3*4098-1)
 
-nside=1024
-npix=nside**2*12
-seed=1
-np.random.seed(seed)
+ell, cell = np.loadtxt(cl_file, unpack=1)
+
+nside=4098
 kappa = create_gaussian_kappa(ell, cell, nside=nside, seed=seed)
 
 # Amend DEC and RA in each of the delta files by the bend angle from alpha map

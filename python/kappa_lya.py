@@ -66,6 +66,7 @@ class Theory:
 
         ell  = np.zeros(ls.size+2)
         cell = np.zeros(ls.size+2)
+        ell[1] = 1
         ell[2:] = ls
         cell[2:] = cl_kappa
 
@@ -118,9 +119,6 @@ class SphericalMap:
         self.lphi.Alm *= -2
         self.dtheta_map = self.lphi.dtheta()
         self.dphi_map = self.lphi.dphi()
-        dtheta = self.dtheta_map.A
-        dphi = self.dphi_map.A/np.sin(self.theta_pix)
-        self.displacement = np.sqrt(dtheta**2+dphi**2)
 
     def _CloneAlm(self,alm):
         almpack = (alm, self.ell, self.em, self.nside, self.npix)
@@ -150,10 +148,14 @@ class SphericalMap:
         mtot=-1*m1.A*np.cos(theta)/np.sin(theta)+m2.A*1/np.sin(theta)
         return SphericalMap(mtot)
 
-    def displace_objects(self, theta, phi):
-        ipix = hp.ang2pix(self.nside, theta, phi)
-        dtheta = self.dtheta_map.A[ipix]
-        dphi = self.dphi_map.A[ipix]/np.sin(theta)
+    def displace_objects(self, theta, phi, old=False):
+        if old:
+            ipix = hp.ang2pix(self.nside, theta, phi)
+            dtheta = self.dtheta_map.A[ipix]
+            dphi = self.dphi_map.A[ipix]/np.sin(theta)
+        else:
+            dtheta = hp.get_interp_val(self.dtheta_map.A, theta, phi)
+            dphi = hp.get_interp_val(self.dphi_map.A, theta, phi)/np.sin(theta)
         dd = np.sqrt(dtheta**2+dphi**2)
         alpha = np.arctan2(dphi,dtheta)
         ## Equation A15 from 0502469
@@ -162,30 +164,107 @@ class SphericalMap:
         phip = phi+np.arcsin(np.sin(alpha)*np.sin(dd)/np.sin(thetap))
         return thetap, phip
 
+class SphereMap:
+
+    def __init__ (self, input_map=None, input_alm=None):
+        if not input_map is None:
+            npix = input_map.size
+            nside = hp.npix2nside(npix)
+            alm = hp.map2alm(input_map)
+            ellmax = nside*3-1
+            ell, em = hp.Alm.getlm(ellmax) 
+            self.input_map = input_map
+            self.npix = npix
+            self.nside = nside
+            self.ell = ell
+            self.alm = alm
+
+    def compute_deriv(self):
+        #-- alm_kappa = - ell*(ell+1)/2 * alm_psi
+        alm = self.alm 
+        ell = self.ell
+        lensing_psi_alm = -2*alm/(ell*(ell+1) + 1*(ell==0))
+        lensing_psi_alm[0] = 0
+        psi, dpsi_dtheta, dpsi_dphi = hp.alm2map_der1(lensing_psi_alm, nside=self.nside)
+        self.lensing_psi_alm = lensing_psi_alm 
+        self.dpsi_dtheta = dpsi_dtheta
+        self.dpsi_dphi   = dpsi_dphi
+
+    def displace_objects(self, theta, phi):
+        dtheta = hp.get_interp_val(self.dpsi_dtheta, theta, phi)
+        dphi   = hp.get_interp_val(self.dpsi_dphi,   theta, phi)
+        dd = np.sqrt(dtheta**2+dphi**2)
+        alpha = np.arctan2(dphi, dtheta)
+        ## Equation A15 from 0502469
+        thetap = np.arccos(np.cos(dd)*np.cos(theta) -
+                           np.sin(dd)*np.sin(theta)*np.cos(alpha))
+        phip = phi+np.arcsin(np.sin(alpha)*np.sin(dd)/np.sin(thetap))
+        return thetap, phip
+
+
 class Kappa:
 
-    def __init__(self, fin):
-        a = fits.getdata(fin)
-        self.kappa = a.kappa
-        self.we = a.wkappa
-        try:
-            self.gamma1 = a.gamma1
-            self.gamma2 = a.gamma2
-            self.npairs = a.npairs
-            has_gamma=True
-        except:
-            has_gamma=False
-            pass
-        self.nside = hp.npix2nside(a.kappa.size)
-        w = (self.we == 0)
-        
-        self.kappa[w] = hp.UNSEEN
+    def __init__(self, fitsfile=None, kappa=None, weights=None, 
+                       gamma1=None, gamma2=None, npairs=None):
+        if not fitsfile is None:
+            a = fits.getdata(fitsfile)
+            kappa = a.kappa
+            weights = a.wkappa
+            try:
+                gamma1 = a.gamma1
+                gamma2 = a.gamma2
+                npairs = a.npairs
+                has_gamma=True
+            except:
+                gamma1 = None
+                gamma2 = None
+                npairs = None
+        self.define(kappa*1, weights*1, gamma1=gamma1, gamma2=gamma2, npairs=npairs)
+    
+    def define(self, kappa, weights, gamma1=None, gamma2=None, npairs=None):
+       
+        has_gamma = True if not gamma1 is None else False
+ 
+        nside = hp.npix2nside(kappa.size)
+        w = (weights == 0)
+        kappa[w] = hp.UNSEEN
         if has_gamma:
-            self.gamma1[w] = hp.UNSEEN
-            self.gamma2[w] = hp.UNSEEN
-        self.mask = ~w 
-        self.has_gamma = has_gamma 
+            gamma1[w] = hp.UNSEEN
+            gamma2[w] = hp.UNSEEN
 
+        self.kappa = kappa
+        self.weights = weights
+        self.gamma1 = gamma1
+        self.gamma2 = gamma2
+        self.mask = ~w 
+        self.nside = nside
+        self.has_gamma = has_gamma 
+        self.fsky = sum(~w)/w.size
+
+
+    def cut_outliers(self, p=0.1):
+        min_weight = np.percentile(self.weights[self.mask], p)
+        w = (self.weights>min_weight)
+        self.mask = self.mask & w
+        self.kappa[~self.mask] = hp.UNSEEN
+        self.fsky = np.sum(self.mask)/w.size
+ 
+    def get_cl(self):
+        cell = hp.anafast(self.kappa)
+        ell = np.arange(cell.size)
+       
+        self.cell = cell
+        self.ell = ell
+
+    def plot_hist_kappa(self, bins=1000, label=None):
+    
+        plt.hist(self.kappa[self.mask], bins=bins, histtype='step', label=label)
+        plt.hist(r'$\kappa$', fontsize=16)
+
+    def plot_hist_weights(self, bins=1000, label=None):
+        plt.hist(np.log10(self.weights[self.mask]), 
+                 bins=bins, histtype='step', label=label)
+        plt.xlabel('log(weights)')
 
 def create_blob_kappa(nside=512, phi0=np.pi/2, theta0=1.1):
     ''' Generatte kappa map with a blob in the center '''
@@ -198,13 +277,19 @@ def create_blob_kappa(nside=512, phi0=np.pi/2, theta0=1.1):
     kappa.compute_deriv()
     return kappa
 
-def create_gaussian_kappa(ell, cell, nside=1024, seed=1):
+def create_gaussian_kappa(ell, cell, nside=1024, seed=None):
 
-    np.random.seed(seed)
-    obsk = hp.sphtfunc.synfast(cell, nside=nside, lmax=2*nside-1,
-                               pol=False)
-    kappa = SphericalMap(obsk)
+    if not seed is None:
+        print('Setting up seed = ', seed)
+        np.random.seed(seed)
+    print('Drawing alm...')
+    alm = hp.synalm(cell, verbose=False) 
+    print('Creating kappa map with nside =', nside)
+    obsk = hp.alm2map(alm, nside=nside, verbose=False) 
+    print('Computing lensing potential and derivatives...')
+    kappa = SphereMap(obsk)
     kappa.compute_deriv()
+    print('Done')
     return kappa
 
 
