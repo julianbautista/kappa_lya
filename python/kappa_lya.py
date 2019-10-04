@@ -178,6 +178,9 @@ class SphereMap:
             self.nside = nside
             self.ell = ell
             self.alm = alm
+        if not input_alm is None:
+            self.alm = input_alm*1.
+            
 
     def compute_deriv(self):
         #-- alm_kappa = - ell*(ell+1)/2 * alm_psi
@@ -277,7 +280,7 @@ def create_blob_kappa(nside=512, phi0=np.pi/2, theta0=1.1):
     kappa.compute_deriv()
     return kappa
 
-def create_gaussian_kappa(ell, cell, nside=1024, seed=None):
+def create_gaussian_kappa(ell, cell, nside=2048, seed=None):
 
     if not seed is None:
         print('Setting up seed = ', seed)
@@ -287,7 +290,7 @@ def create_gaussian_kappa(ell, cell, nside=1024, seed=None):
     print('Creating kappa map with nside =', nside)
     obsk = hp.alm2map(alm, nside=nside, verbose=False) 
     print('Computing lensing potential and derivatives...')
-    kappa = SphereMap(obsk)
+    kappa = SphereMap(input_map=obsk)
     kappa.compute_deriv()
     print('Done')
     return kappa
@@ -397,7 +400,7 @@ def rebin_cell(ell, cl, nell=100, ellmin=None, ellmax=None):
     if not ellmax:
         ellmax = max(ell) 
 
-    w = (ell>=ellmin)&(ell<=ellmax)
+    w = (ell>=ellmin)&(ell<ellmax)
     index = np.floor( (ell[w]-ellmin)*1./(ellmax-ellmin)*nell ).astype(int)
     well = np.bincount( index, weights=weights[w])
     sell = np.bincount( index, weights=weights[w]*ell[w])

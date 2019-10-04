@@ -2,6 +2,7 @@ from astropy.table import Table, join
 import numpy as np
 import healpy as hp
 
+import argparse
 
 def get_radec(thid_in, ra_in, dec_in, thid_out):
     ''' Function to obtain RA, DEC from THING_ID values'''
@@ -56,26 +57,35 @@ def make_map_midpoint(nside, ra_mid, dec_mid, skappa, wkappa):
 
     return kappa_map, wmap
 
+parser = argparse.ArgumentParser()
+parser.add_argument('-i', '--input', help='Input kappa list')
+parser.add_argument('-o', '--output', help='Output map name')
+parser.add_argument('--drq', required=True, help='Quasar catalog')
+parser.add_argument('--nside', type=int, default=256, help='Healpix nside for output map')
+args = parser.parse_args()
+
+
 
 #-- read list of kappas
-kap = Table.read('/mnt/lustre/bautista/lya/kappa_lya/kappa_lists/kappalist-noiseless-cnstwe-lensed-truecorr-rtmax70-rpmax40.fits')
-#kap = Table.read('kappalist-desi-noiseless-fromdeltas-rt20-rp40.fits')
+kap = Table.read(args.input)
 
 #-- read QSO catalog with THING_ID, RA and DEC information 
-drq = Table.read('/mnt/lustre/eboss/lya/mocks/DRQ_mocks.fits')
-#drq = Table.read('/mnt/lustre/youless/desi/zcat_desi_drq.fits')
-
-drq.remove_columns(['Z', 'PLATE', 'MJD', 'FIBERID'])
+drq = Table.read(args.drq)
+#drq.remove_columns(['Z', 'PLATE', 'MJD', 'FIBERID'])
 
 ra1, dec1 = get_radec(drq['THING_ID'].data, drq['RA'].data, drq['DEC'].data,
-                      kap['THID1'].data) 
+                      kap['THID_1'].data) 
 ra2, dec2 = get_radec(drq['THING_ID'].data, drq['RA'].data, drq['DEC'].data,
-                      kap['THID2'].data) 
+                      kap['THID_2'].data) 
 ra_mid, dec_mid = get_mid_radec(ra1, dec1, ra2, dec2)
 
 skappa = kap['SKAPPA'].data
 wkappa = kap['WKAPPA'].data
 
-nside = 64
-kappamap, wmap = make_map_midpoint(nside, ra_mid, dec_mid, skappa, wkappa)
+kappamap, wmap = make_map_midpoint(args.nside, ra_mid, dec_mid, skappa, wkappa)
+
+t = Table()
+t['KAPPA'] = kappamap
+t['WEIGHT'] = wmap
+t.write(args.output, overwrite=True)
 
